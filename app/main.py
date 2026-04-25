@@ -87,6 +87,16 @@ def handler(event, context):
         logger.exception("lambda_handler_error", extra={"apigw_request_id": request_id})
         raise
 
+    logger.info("raw_mangum_response", extra={
+    "response": response,
+    "statusCode": response.get("statusCode"),
+    "headers": response.get("headers"),
+    "isBase64Encoded": response.get("isBase64Encoded"),
+    "body_type": type(response.get("body")).__name__,
+    "body_length": len(response.get("body", "") or ""),
+    "body_preview": (response.get("body") or "")[:200],
+    })
+
     # Defensive normalization: API Gateway requires a strict "Lambda proxy" shape.
     # If something returns a non-string body or non-serializable headers, API Gateway
     # may respond with 5xx even though the app ran.
@@ -96,9 +106,6 @@ def handler(event, context):
                 response["statusCode"] = int(response["statusCode"])
             except Exception:
                 response["statusCode"] = 502
-
-        if "body" in response and response["body"] is not None and not isinstance(response["body"], str):
-            response["body"] = json.dumps(response["body"])
 
         headers = response.get("headers")
         if isinstance(headers, dict):

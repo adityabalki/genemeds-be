@@ -20,7 +20,7 @@ def admin_login(payload: LoginRequest) -> LoginResponse:
     return LoginResponse(**authenticate_user("admin", payload.email, payload.password))
 
 
-@router.post("/hcp/register", response_model=RegistrationResponse, status_code=201)
+@router.post("/hcp/register", response_model=RegistrationResponse, status_code=200)
 def hcp_register(payload: HcpRegisterRequest) -> RegistrationResponse:
     return RegistrationResponse(**register_user("hcp", payload.model_dump()))
 
@@ -30,7 +30,7 @@ def hcp_login(payload: LoginRequest) -> LoginResponse:
     return LoginResponse(**authenticate_user("hcp", payload.email, payload.password))
 
 
-@router.post("/receptionist/register", response_model=RegistrationResponse, status_code=201)
+@router.post("/receptionist/register", response_model=RegistrationResponse, status_code=200)
 def receptionist_register(payload: ReceptionistRegisterRequest) -> RegistrationResponse:
     return RegistrationResponse(**register_user("receptionist", payload.model_dump()))
 
@@ -40,7 +40,7 @@ def receptionist_login(payload: LoginRequest) -> LoginResponse:
     return LoginResponse(**authenticate_user("receptionist", payload.email, payload.password))
 
 
-@router.post("/lab/register", response_model=RegistrationResponse, status_code=201)
+@router.post("/lab/register", response_model=RegistrationResponse, status_code=200)
 def lab_register(payload: LabRegisterRequest) -> RegistrationResponse:
     return RegistrationResponse(**register_user("lab", payload.model_dump()))
 
