@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "genemeds-be"
+version = "0.1.0"
+description = "FastAPI Lambda backend for Genemeds authentication flows."
+requires-python = ">=3.11"
+dependencies = [
+  "boto3>=1.34,<2.0",
+  "email-validator>=2.2,<3.0",
+  "fastapi>=0.115,<1.0",
+  "mangum>=0.17,<1.0",
+  "psycopg[binary,pool]>=3.2,<4.0",
+  "pydantic-settings>=2.4,<3.0",
+  "pyjwt>=2.9,<3.0",
+  "python-json-logger>=2.0,<4.0",
+  "uvicorn>=0.30,<1.0",
+  "bcrypt>=4.1,<5.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "httpx>=0.27,<1.0",
+  "pytest>=8.3,<9.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
