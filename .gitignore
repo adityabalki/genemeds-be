@@ -4,6 +4,7 @@ genemeds_be.egg-info/
 .postman/
 lambda.zip
 build_lambda_zip.sh
+graphify-out/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
