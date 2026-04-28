@@ -14,7 +14,7 @@ class Settings(BaseSettings):
 
     app_name: str = Field(default="genemeds-auth", alias="APP_NAME")
     app_env: str = Field(default="dev", alias="APP_ENV")
-    aws_region: str = Field(default="ap-south-1", alias="AWS_REGION")
+    aws_region: str = Field(default="ap-south-1", alias="APP_AWS_REGION")
     db_secret_name: str = Field(default="dev/genmeds/dbsecrets", alias="DB_SECRET_NAME")
     api_secret_name: str = Field(default="dev/genmeds/api", alias="API_SECRET_NAME")
     jwt_secret: str = Field(alias="JWT_SECRET")
