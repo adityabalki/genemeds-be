@@ -254,3 +254,59 @@ CREATE UNIQUE INDEX IF NOT EXISTS uix_appt_patient_hcp_day
 -- ALTER SEQUENCE core.patient_id_seq RESTART WITH 1;
 -- ALTER SEQUENCE core.appointment_id_seq RESTART WITH 1;
 -- =============================================================
+
+-- =============================================================
+-- HCP OPERATIONAL TABLES
+-- =============================================================
+
+CREATE SEQUENCE IF NOT EXISTS core.prescription_id_seq START 1 INCREMENT 1;
+
+-- Prescriptions written by an HCP for a patient
+CREATE TABLE IF NOT EXISTS core.prescriptions (
+    id                BIGSERIAL    PRIMARY KEY,
+    prescription_ref  VARCHAR(20)  UNIQUE NOT NULL,        -- RX-00001
+    patient_id        BIGINT       NOT NULL REFERENCES core.patient_registrations (id),
+    hcp_id            INTEGER      NOT NULL,               -- core.hcps.id
+    clinic_code       VARCHAR(50)  NOT NULL,
+    diagnosis         TEXT,
+    drugs             JSONB        NOT NULL DEFAULT '[]',  -- [{name,dose,frequency,duration,notes}]
+    instructions      TEXT,
+    interaction_flags JSONB        DEFAULT '[]',           -- [{severity,description}]
+    created_at        TIMESTAMPTZ  DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_rx_patient   ON core.prescriptions (patient_id);
+CREATE INDEX IF NOT EXISTS idx_rx_hcp       ON core.prescriptions (hcp_id);
+CREATE INDEX IF NOT EXISTS idx_rx_clinic_dt ON core.prescriptions (clinic_code, created_at);
+
+-- Gene reports parsed from uploaded gene test files
+CREATE TABLE IF NOT EXISTS core.gene_reports (
+    id               BIGSERIAL   PRIMARY KEY,
+    patient_id       BIGINT      NOT NULL REFERENCES core.patient_registrations (id),
+    hcp_id           INTEGER,                              -- who ordered it (nullable for lab-uploaded)
+    document_id      BIGINT      REFERENCES core.patient_documents (id),
+    report_date      DATE,
+    summary          TEXT,
+    raw_json         JSONB,                                -- parsed gene data
+    risk_level       VARCHAR(20) DEFAULT 'unknown',        -- low/medium/high/unknown
+    ordered_by       INTEGER,                              -- core.hcps.id
+    processed_at     TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_gene_patient ON core.gene_reports (patient_id);
+CREATE INDEX IF NOT EXISTS idx_gene_hcp     ON core.gene_reports (hcp_id);
+
+-- HCP-facing alerts (gene risk, drug interactions, missed follow-ups)
+CREATE TABLE IF NOT EXISTS core.hcp_alerts (
+    id           BIGSERIAL   PRIMARY KEY,
+    hcp_id       INTEGER     NOT NULL,                     -- core.hcps.id
+    patient_id   BIGINT      REFERENCES core.patient_registrations (id),
+    alert_type   VARCHAR(50) NOT NULL,                     -- gene_risk / drug_interaction / missed_followup
+    severity     VARCHAR(20) DEFAULT 'medium',             -- low / medium / high
+    message      TEXT        NOT NULL,
+    is_dismissed BOOLEAN     DEFAULT FALSE,
+    created_at   TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_alerts_hcp ON core.hcp_alerts (hcp_id, is_dismissed);
+
+-- INCREMENTAL MIGRATION for HCP tables
+ALTER TABLE core.prescriptions  ADD COLUMN IF NOT EXISTS interaction_flags JSONB DEFAULT '[]';
+-- (prescriptions, gene_reports, hcp_alerts were new in HCP branch — no prior columns to add)

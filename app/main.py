@@ -13,6 +13,7 @@ from mangum import Mangum
 from app.config import get_settings
 from app.logging_config import configure_logging
 from app.routers.auth import router as auth_router
+from app.routers.hcp import router as hcp_router
 from app.routers.receptionist import router as receptionist_router
 from app.schemas import HealthResponse
 
@@ -29,6 +30,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(auth_router)
+app.include_router(hcp_router)
 app.include_router(receptionist_router)
 
 

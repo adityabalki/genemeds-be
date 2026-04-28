@@ -232,3 +232,114 @@ class ConfirmUploadRequest(BaseModel):
     file_type: Literal["gene_test", "lab_report"]
     genetic_consent: bool = False
 
+
+# ── HCP schemas ───────────────────────────────────────────────────────────────
+
+from typing import Any  # noqa: E402
+
+
+class HcpProfileResponse(BaseModel):
+    id: int
+    hcp_id: Optional[str] = None
+    full_name: str
+    email: str
+    mobile: Optional[str] = None
+    degree: Optional[str] = None
+    specialisation: Optional[str] = None
+    experience: Optional[str] = None
+    hospital: Optional[str] = None
+    clinic_code: Optional[str] = None
+    is_verified: bool = False
+
+
+class DashboardStatsResponse(BaseModel):
+    total_patients: int
+    appointments_today: int
+    pending_gene_reports: int
+    unread_alerts: int
+    appointments_today_delta: int = 0
+    patients_this_week: int = 0
+
+
+class HcpPatientSummary(BaseModel):
+    id: str
+    patient_id: str
+    full_name: str
+    mobile: str
+    dob: Optional[str] = None
+    gender: Optional[str] = None
+    last_visit: Optional[str] = None
+    gene_test_status: str
+    risk_level: Optional[str] = None
+    chief_complaint: Optional[str] = None
+
+
+class HcpPatientDetail(BaseModel):
+    id: str
+    patient_id: str
+    full_name: str
+    mobile: str
+    email: Optional[str] = None
+    dob: Optional[str] = None
+    gender: Optional[str] = None
+    city: Optional[str] = None
+    chief_complaint: Optional[str] = None
+    ongoing_treatment: Optional[str] = None
+    known_allergies: Optional[str] = None
+    past_medical_history: Optional[str] = None
+    family_history: Optional[str] = None
+    gene_test_status: str
+    vitals: Optional[dict[str, Any]] = None
+    created_at: str
+
+
+class DrugItemSchema(BaseModel):
+    name: str
+    dose: str
+    frequency: str
+    duration: str
+    notes: Optional[str] = None
+
+
+class CreatePrescriptionRequest(BaseModel):
+    patient_id: str
+    diagnosis: Optional[str] = None
+    drugs: list[DrugItemSchema] = Field(default_factory=list, min_length=1)
+    instructions: Optional[str] = None
+
+
+class PrescriptionResponse(BaseModel):
+    id: int
+    prescription_ref: str
+    patient_id: str
+    diagnosis: Optional[str] = None
+    drugs: list[dict[str, Any]]
+    instructions: Optional[str] = None
+    interaction_flags: list[dict[str, Any]] = []
+    created_at: str
+
+
+class GeneReportResponse(BaseModel):
+    id: int
+    patient_id: str
+    patient_name: Optional[str] = None
+    report_date: Optional[str] = None
+    summary: Optional[str] = None
+    risk_level: str
+    processed_at: str
+
+
+class OrderGeneTestRequest(BaseModel):
+    notes: Optional[str] = None
+
+
+class AlertResponse(BaseModel):
+    id: int
+    patient_id: Optional[str] = None
+    patient_name: Optional[str] = None
+    alert_type: str
+    severity: str
+    message: str
+    is_dismissed: bool
+    created_at: str
+
