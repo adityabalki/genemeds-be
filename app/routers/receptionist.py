@@ -4,6 +4,7 @@ import os
 import secrets
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import boto3
 import jwt
@@ -28,6 +29,7 @@ from app.schemas import (
 
 router = APIRouter(prefix="/receptionist", tags=["receptionist"])
 _bearer = HTTPBearer()
+_IST = ZoneInfo("Asia/Kolkata")
 
 _DAY_TO_INT: dict[str, int] = {
     name: i for i, name in enumerate(
@@ -120,6 +122,38 @@ def _next_token(clinic_code: str, conn: Any) -> str:
     return f"T-{(count + 1):03d}"
 
 
+def _next_appointment_token(clinic_code: str, hcp_pk: int, slot_dt_utc: datetime, conn: Any) -> str:
+    """Token/queue number per HCP per day (IST)."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT COUNT(*) AS cnt FROM core.appointments
+            WHERE clinic_code = %(clinic)s
+              AND hcp_id = %(hcp)s
+              AND (appointment_datetime AT TIME ZONE 'Asia/Kolkata')::date =
+                  (%(dt)s AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date
+              AND status != 'cancelled'
+            """,
+            {"clinic": clinic_code, "hcp": hcp_pk, "dt": slot_dt_utc},
+        )
+        row = cur.fetchone()
+    count = int(row["cnt"]) if row else 0
+    return f"T-{(count + 1):03d}"
+
+
+def _slot_utc_from_ist(d: date, hhmm: str) -> datetime:
+    """Interpret the provided date+time as IST and convert to UTC for storage."""
+    slot_local = datetime.combine(d, time.fromisoformat(hhmm)).replace(tzinfo=_IST)
+    return slot_local.astimezone(timezone.utc)
+
+
+def _ensure_not_past_ist(slot_dt_utc: datetime) -> None:
+    now_ist = datetime.now(tz=_IST)
+    slot_ist = slot_dt_utc.astimezone(_IST)
+    if slot_ist.date() < now_ist.date():
+        raise HTTPException(status_code=400, detail="Appointment date cannot be in the past.")
+
+
 def _next_patient_id(conn: Any) -> str:
     with conn.cursor() as cur:
         cur.execute("SELECT nextval('core.patient_id_seq') AS seq")
@@ -187,7 +221,7 @@ def register_patient(
 
     with get_connection() as conn:
         patient_id_str = _next_patient_id(conn)
-        token_number = _next_token(clinic_code, conn)
+        registration_token = _next_token(clinic_code, conn)
 
         with conn.cursor() as cur:
             cur.execute(
@@ -220,7 +254,7 @@ def register_patient(
                     "past_medical_history": body.past_medical_history,
                     "family_history": body.family_history,
                     "registered_by": receptionist_id,
-                    "token_number": token_number,
+                    "token_number": registration_token,
                 },
             )
             row = cur.fetchone()
@@ -248,12 +282,15 @@ def register_patient(
                 )
 
         appointment_id = None
+        appointment_token: str | None = None
         if body.appointment and body.appointment.hcp_id and body.appointment.date and body.appointment.slot:
             apt = body.appointment
             hcp_pk = _resolve_hcp_pk(apt.hcp_id, conn)
-            slot_dt = datetime.combine(apt.date, time.fromisoformat(apt.slot)).replace(tzinfo=timezone.utc)
+            slot_dt = _slot_utc_from_ist(apt.date, apt.slot)
+            _ensure_not_past_ist(slot_dt)
             _check_duplicate_appointment(internal_id, hcp_pk, slot_dt, conn)
             apt_ref = _next_appointment_id(conn)
+            appointment_token = _next_appointment_token(clinic_code, hcp_pk, slot_dt, conn)
             with conn.cursor() as cur:
                 cur.execute(
                     """
@@ -268,7 +305,7 @@ def register_patient(
                         "hcp": hcp_pk,
                         "clinic": clinic_code,
                         "dt": slot_dt,
-                        "tok": token_number,
+                        "tok": appointment_token,
                         "vt": body.visit_type or "First Visit",
                         "by": receptionist_id,
                     },
@@ -280,7 +317,7 @@ def register_patient(
 
     return PatientRegisterResponse(
         patient_id=patient_id_str,
-        token_number=token_number,
+        token_number=appointment_token or registration_token,
         appointment_id=appointment_id,
     )
 
@@ -340,7 +377,8 @@ def book_appointment(
 ) -> AppointmentResponse:
     clinic_code = ctx["clinic_code"]
     receptionist_id = ctx["user_id"]
-    slot_dt = datetime.combine(body.date, time.fromisoformat(body.slot)).replace(tzinfo=timezone.utc)
+    slot_dt = _slot_utc_from_ist(body.date, body.slot)
+    _ensure_not_past_ist(slot_dt)
 
     with get_connection() as conn:
         hcp_pk = _resolve_hcp_pk(body.hcp_id, conn)
@@ -369,7 +407,7 @@ def book_appointment(
 
         _check_duplicate_appointment(patient_pk, hcp_pk, slot_dt, conn)
 
-        token_number = _next_token(clinic_code, conn)
+        token_number = _next_appointment_token(clinic_code, hcp_pk, slot_dt, conn)
         apt_ref = _next_appointment_id(conn)
 
         with conn.cursor() as cur:
@@ -417,7 +455,7 @@ def today_appointments(ctx: dict = Depends(_current_receptionist)) -> dict:
                 WHERE a.clinic_code = %(clinic)s
                   AND (a.appointment_datetime AT TIME ZONE 'Asia/Kolkata')::date =
                       (NOW() AT TIME ZONE 'Asia/Kolkata')::date
-                ORDER BY a.token_number
+                ORDER BY a.appointment_datetime ASC
                 """,
                 {"clinic": clinic_code},
             )
@@ -449,7 +487,8 @@ def today_appointments(ctx: dict = Depends(_current_receptionist)) -> dict:
                 "patient_name": r["patient_name"],
                 "mobile": r["mobile"],
                 "hcp_name": r["hcp_name"],
-                "appointment_time": r["appointment_datetime"].strftime("%H:%M") if r["appointment_datetime"] else "",
+                "appointment_time": r["appointment_datetime"].astimezone(_IST).strftime("%H:%M") if r["appointment_datetime"] else "",
+                "appointment_date": r["appointment_datetime"].astimezone(_IST).strftime("%d %b %Y") if r["appointment_datetime"] else "",
                 "status": _APPT_STATUS_DISPLAY.get(r["status"] or "scheduled", "Waiting"),
             }
             for r in rows
