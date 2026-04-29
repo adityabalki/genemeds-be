@@ -186,6 +186,14 @@ class AppointmentRequest(BaseModel):
     hcp_id: str
     date: _date
     slot: str  # "HH:MM"
+    # Optional visit / clinical info
+    visit_type: Optional[str] = "Follow Up"
+    chief_complaint: Optional[str] = None
+    ongoing_treatment: Optional[str] = None
+    known_allergies: Optional[str] = None
+    past_medical_history: Optional[str] = None
+    family_history: Optional[str] = None
+    vitals: Optional[VitalsInput] = None
 
 
 class AppointmentResponse(BaseModel):

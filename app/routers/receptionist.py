@@ -123,7 +123,9 @@ def _next_token(clinic_code: str, conn: Any) -> str:
 
 
 def _next_appointment_token(clinic_code: str, hcp_pk: int, slot_dt_utc: datetime, conn: Any) -> str:
-    """Token/queue number per HCP per day (IST)."""
+    """Token/queue number per HCP per day (IST).
+    Counts ALL appointments (including cancelled) so tokens are never reused.
+    """
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -132,7 +134,6 @@ def _next_appointment_token(clinic_code: str, hcp_pk: int, slot_dt_utc: datetime
               AND hcp_id = %(hcp)s
               AND (appointment_datetime AT TIME ZONE 'Asia/Kolkata')::date =
                   (%(dt)s AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date
-              AND status != 'cancelled'
             """,
             {"clinic": clinic_code, "hcp": hcp_pk, "dt": slot_dt_utc},
         )
@@ -429,6 +430,53 @@ def book_appointment(
                 },
             )
             row = cur.fetchone()
+
+        # Update patient clinical info if provided
+        clinical_updates: dict[str, Any] = {}
+        if body.visit_type:
+            clinical_updates["visit_type"] = body.visit_type
+        if body.chief_complaint:
+            clinical_updates["chief_complaint"] = body.chief_complaint
+        if body.ongoing_treatment is not None:
+            clinical_updates["ongoing_treatment"] = body.ongoing_treatment
+        if body.known_allergies is not None:
+            clinical_updates["known_allergies"] = body.known_allergies
+        if body.past_medical_history is not None:
+            clinical_updates["past_medical_history"] = body.past_medical_history
+        if body.family_history is not None:
+            clinical_updates["family_history"] = body.family_history
+
+        if clinical_updates:
+            set_clause = ", ".join(f"{k} = %({k})s" for k in clinical_updates)
+            clinical_updates["pid"] = patient_pk
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"UPDATE core.patient_registrations SET {set_clause}, updated_at = NOW() WHERE id = %(pid)s",
+                    clinical_updates,
+                )
+
+        # Insert vitals if provided
+        if body.vitals:
+            v = body.vitals
+            if any([v.bp_systolic, v.bp_diastolic, v.weight_kg, v.o2_level, v.notes]):
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        INSERT INTO core.patient_vitals
+                            (patient_id, bp_systolic, bp_diastolic, weight_kg, o2_level, notes, recorded_by)
+                        VALUES (%(pid)s, %(sys)s, %(dia)s, %(wt)s, %(o2)s, %(notes)s, %(by)s)
+                        """,
+                        {
+                            "pid": patient_pk,
+                            "sys": v.bp_systolic,
+                            "dia": v.bp_diastolic,
+                            "wt": v.weight_kg,
+                            "o2": v.o2_level,
+                            "notes": v.notes,
+                            "by": receptionist_id,
+                        },
+                    )
+
         conn.commit()
 
     return AppointmentResponse(
@@ -455,6 +503,7 @@ def today_appointments(ctx: dict = Depends(_current_receptionist)) -> dict:
                 WHERE a.clinic_code = %(clinic)s
                   AND (a.appointment_datetime AT TIME ZONE 'Asia/Kolkata')::date =
                       (NOW() AT TIME ZONE 'Asia/Kolkata')::date
+                  AND a.status != 'cancelled'
                 ORDER BY a.appointment_datetime ASC
                 """,
                 {"clinic": clinic_code},
@@ -510,8 +559,9 @@ def update_appointment_status(
             cur.execute(
                 """
                 UPDATE core.appointments SET status = %(status)s
-                WHERE appointment_ref = %(id)s AND clinic_code = %(clinic)s
-                RETURNING appointment_ref
+                WHERE (appointment_ref = %(id)s OR id::text = %(id)s)
+                  AND clinic_code = %(clinic)s
+                RETURNING appointment_ref, id
                 """,
                 {"status": db_status, "id": appointment_id, "clinic": clinic_code},
             )
