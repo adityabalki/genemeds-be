@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import json as _json
-from datetime import date
+from datetime import date, datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -18,6 +19,7 @@ from app.schemas import (
     HcpPatientDetail,
     HcpPatientSummary,
     HcpProfileResponse,
+    HcpTodayAppointment,
     OrderGeneTestRequest,
     PrescriptionResponse,
 )
@@ -106,7 +108,7 @@ def dashboard_stats(hcp: dict[str, Any] = Depends(_current_hcp)) -> DashboardSta
             pending_gene_reports = int((cur.fetchone() or {}).get("count", 0) or 0)
 
             cur.execute(
-                "SELECT COUNT(*) FROM core.hcp_alerts WHERE hcp_id = %(id)s AND is_dismissed = FALSE",
+                "SELECT COUNT(*) FROM core.hcp_alerts WHERE hcp_id = %(id)s AND dismissed = FALSE",
                 {"id": hcp_id},
             )
             unread_alerts = int((cur.fetchone() or {}).get("count", 0) or 0)
@@ -117,6 +119,46 @@ def dashboard_stats(hcp: dict[str, Any] = Depends(_current_hcp)) -> DashboardSta
         pending_gene_reports=pending_gene_reports,
         unread_alerts=unread_alerts,
     )
+
+
+# ─── Today's appointments ─────────────────────────────────────────────────────
+
+_IST = ZoneInfo("Asia/Kolkata")
+
+
+@router.get("/appointments/today", response_model=list[HcpTodayAppointment])
+def today_appointments(
+    hcp: dict[str, Any] = Depends(_current_hcp),
+) -> list[HcpTodayAppointment]:
+    hcp_id = int(hcp["sub"])
+    today = datetime.now(_IST).date()
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                    a.appointment_ref,
+                    a.token_number,
+                    pr.full_name   AS patient_name,
+                    pr.patient_id,
+                    pr.mobile,
+                    TO_CHAR(
+                        (a.appointment_datetime AT TIME ZONE 'Asia/Kolkata'),
+                        'HH24:MI'
+                    ) AS appointment_time,
+                    a.status
+                FROM core.appointments a
+                JOIN core.patient_registrations pr ON pr.id = a.patient_id
+                WHERE a.hcp_id = %(hcp_id)s
+                  AND CAST(a.appointment_datetime AT TIME ZONE 'Asia/Kolkata' AS date) = %(today)s
+                  AND a.status != 'cancelled'
+                ORDER BY a.appointment_datetime ASC
+                """,
+                {"hcp_id": hcp_id, "today": today},
+            )
+            rows = cur.fetchall()
+    return [HcpTodayAppointment(**r) for r in rows]
 
 
 # ─── Patients ─────────────────────────────────────────────────────────────────
@@ -444,10 +486,10 @@ def list_alerts(
                        pr.patient_id,
                        pr.full_name AS patient_name,
                        al.alert_type, al.severity, al.message,
-                       al.is_dismissed, al.created_at::text
+                       al.dismissed, al.created_at::text
                 FROM core.hcp_alerts al
                 LEFT JOIN core.patient_registrations pr ON pr.id = al.patient_id
-                WHERE al.hcp_id = %(hcp_id)s AND al.is_dismissed = FALSE
+                WHERE al.hcp_id = %(hcp_id)s AND al.dismissed = FALSE
                 ORDER BY
                     CASE al.severity WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,
                     al.created_at DESC
@@ -471,7 +513,7 @@ def dismiss_alert(
             cur.execute(
                 """
                 UPDATE core.hcp_alerts
-                SET is_dismissed = TRUE
+                SET dismissed = TRUE
                 WHERE id = %(alert_id)s AND hcp_id = %(hcp_id)s
                 RETURNING id
                 """,

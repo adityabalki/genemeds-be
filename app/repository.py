@@ -27,7 +27,7 @@ class RoleConfig:
 
 ROLE_CONFIGS: dict[str, RoleConfig] = {
     "admin":        RoleConfig(schema="core", table="admins",        role="Admin"),
-    "hcp":          RoleConfig(schema="core", table="hcps",          role="HCP",          extra_cols=("full_name",)),
+    "hcp":          RoleConfig(schema="core", table="hcps",          role="HCP",          extra_cols=("full_name", "clinic_code")),
     "receptionist": RoleConfig(schema="core", table="receptionists", role="Receptionist", extra_cols=("full_name", "clinic_code")),
     "lab":          RoleConfig(schema="core", table="labs",          role="Lab",          extra_cols=("lab_name",)),
     "patient":      RoleConfig(schema="core", table="patients",      role="Patient",      extra_cols=("full_name",)),

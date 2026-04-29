@@ -302,10 +302,10 @@ CREATE TABLE IF NOT EXISTS core.hcp_alerts (
     alert_type   VARCHAR(50) NOT NULL,                     -- gene_risk / drug_interaction / missed_followup
     severity     VARCHAR(20) DEFAULT 'medium',             -- low / medium / high
     message      TEXT        NOT NULL,
-    is_dismissed BOOLEAN     DEFAULT FALSE,
+    dismissed    BOOLEAN     DEFAULT FALSE,
     created_at   TIMESTAMPTZ DEFAULT NOW()
 );
-CREATE INDEX IF NOT EXISTS idx_alerts_hcp ON core.hcp_alerts (hcp_id, is_dismissed);
+CREATE INDEX IF NOT EXISTS idx_alerts_hcp ON core.hcp_alerts (hcp_id, dismissed);
 
 -- INCREMENTAL MIGRATION for HCP tables
 ALTER TABLE core.prescriptions  ADD COLUMN IF NOT EXISTS interaction_flags JSONB DEFAULT '[]';

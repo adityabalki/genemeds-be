@@ -340,6 +340,16 @@ class AlertResponse(BaseModel):
     alert_type: str
     severity: str
     message: str
-    is_dismissed: bool
+    dismissed: bool
     created_at: str
+
+
+class HcpTodayAppointment(BaseModel):
+    appointment_ref: str
+    token_number: Optional[str] = None
+    patient_name: str
+    patient_id: str
+    mobile: str
+    appointment_time: str   # HH:MM (IST)
+    status: str
 
